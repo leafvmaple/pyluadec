@@ -1,5 +1,5 @@
 from utility import Struct, read, fread
-from luadef import OP_ASM, OP_DESC
+from luadef import OP_ASM, OP_DECODE, OP_CODE, Kst, RK, R, U, F, T
 
 class TTYPE:
     TNIL = 0
@@ -48,10 +48,7 @@ class Instruction(Struct):
         self.B  = (self.Inst >> 23) & 0b111111111
         self.Bx = (self.Inst >> 14)
 
-        self._ASM = OP_ASM[self.OP](self.A, self.B, self.C, self.Bx) if self.OP in OP_ASM else ''
-    
-    def update(self, key, func):
-        self._Desc = OP_DESC[self.OP](self.A, self.B, self.C, self.Bx, key, func) if self.OP in OP_DESC else ''
+        self._ASM = OP_ASM[self.OP](self)
 
     def format(self):
         # return '{0}({1:X})'.format(self._Desc, self.Inst)
@@ -62,11 +59,7 @@ class Code(Struct):
         super().__init__()
 
         self.read('SizeCode',    file,  '*u4')
-        self.read('Code',        file,  [Instruction for i in range(self.SizeCode)])
-
-    def update(self, key, func):
-        for inst in self.Code:
-            inst.update(key, func)
+        self.read('Instructions', file,  [Instruction for i in range(self.SizeCode)])
 
 class LocVar(Struct):
     def __init__(self, file):
@@ -100,12 +93,10 @@ class Constant(Struct):
         super().__init__()
 
         self.read('SizeKey',      file,  '*u4')
-        if self.SizeKey > 0:
-            self.Key = [CONST_KEY[read(file, '*u1')](file) for i in range(0, self.SizeKey)]
+        self.Key = [CONST_KEY[read(file, '*u1')](file) for i in range(0, self.SizeKey)]
 
         self.read('SizeFunction',      file,  '*u4')
-        if self.SizeFunction > 0:
-            self.read('Funtions',      file,  [Function for i in range(self.SizeFunction)])
+        self.read('Functions',      file,  [Function for i in range(self.SizeFunction)])
 
 
 class Function(Struct):
@@ -123,7 +114,33 @@ class Function(Struct):
         self.read('Constant',             file,  Constant)
         self.read('Debug',                file,  Debug)
 
-        self.Code.update(self.Constant.Key if self.Constant.SizeKey > 0 else [], self.Constant.Funtions if self.Constant.SizeFunction > 0 else [])
+    def decompile(self):
+        keys  = self.Constant.Key
+        funcs = self.Constant.Functions
+        codes = []
+        vals = {}
+        flag = {}
+        skip = 0
+        for i, cur in enumerate(self.Code.Instructions):
+            if skip > 0:
+                skip -= 1
+                continue
+
+            if cur.OP == OP_CODE.GETGLOBAL:
+                vals[cur.A] = keys[cur.Bx]
+            
+            if cur.OP == OP_CODE.CLOSURE:
+                func = funcs[cur.Bx]
+                vals[cur.A] = 'function()'
+                skip = func.Upvalues
+
+            if cur.OP == OP_CODE.GETTABLE:
+                if cur.B in vals:
+                    codes.append('%s%s = %s' % (F(cur.A, flag), R(cur.A), T(vals[cur.B], RK(cur.C, keys))))
+                    continue
+
+            codes.append(OP_DECODE[cur.OP](cur, keys, funcs, flag))
+        return '\n'.join(codes)
 
 class Header(Struct):
     def __init__(self, file):
@@ -147,3 +164,6 @@ class ByteCode(Struct):
 
         self.read('Header',   file, Header)
         self.read('Function', file, Function)
+
+    def decompile(self):
+        return self.Function.decompile()

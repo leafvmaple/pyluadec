@@ -1,119 +1,140 @@
 def Kst(index, key):
     key = key[index]
-    return "'%s'" % key if type(key) != float else key
+    return key if type(key) != float else key
 
 def RK(index, key):
     if (index & 256) == 0:
-        return 'R%d' % index
+        return R(index)
     return Kst(index - 256, key)
 
 def R(index):
-    return 'R%d' % index
+    return 'a%d' % index
 
 def U(index):
-    return 'U%d' % index
+    return 'u%d' % index
+
+def F(index, flag):
+    field = 'local ' if index not in flag else ''
+    flag[index] = True
+    return field
+
+def T(table, key):
+    if type(key) == float or type(key) == int:
+        return '%s[%s]' % (table, key)
+    return '%s' % key if table == '_G' else '%s.%s' % (table, key)
+
+class OP_CODE:
+    MOVE      = 0
+    LOADK     = 1
+    LOADBOOL  = 2
+    LOADNIL   = 3
+    GETUPVAL  = 4
+    GETGLOBAL = 5
+    GETTABLE  = 6
+
+    CLOSURE   = 36
 
 OP_ASM = {
-    0: lambda a, b, c, bx: 'MOVE %d %d'        % (a, b),
-    1: lambda a, b, c, bx: 'LOADK %d %d'       % (a, bx),
-    2: lambda a, b, c, bx: 'LOADBOOL %d %d %d' % (a, b, c),
-    3: lambda a, b, c, bx: 'LOADNIL %d %d'     % (a, b),
-    4: lambda a, b, c, bx: 'GETUPVAL %d %d'    % (a, b),
+    0:  lambda it: 'MOVE %d %d'         % (it.A, it.B),
+    1:  lambda it: 'LOADK %d %d'        % (it.A, it.Bx),
+    2:  lambda it: 'LOADBOOL %d %d %d'  % (it.A, it.B, it.C),
+    3:  lambda it: 'LOADNIL %d %d'      % (it.A, it.B),
+    4:  lambda it: 'GETUPVAL %d %d'     % (it.A, it.B),
     
-    5: lambda a, b, c, bx: 'GETGLOBAL %d %d'   % (a, bx),
-    6: lambda a, b, c, bx: 'GETTABLE %d %d %d' % (a, b, c),
+    5:  lambda it: 'GETGLOBAL %d %d'    % (it.A, it.Bx),
+    6:  lambda it: 'GETTABLE %d %d %d'  % (it.A, it.B, it.C),
     
-    7: lambda a, b, c, bx: 'SETGLOBAL %d %d' % (a, bx),
-    8: lambda a, b, c, bx: 'SETUPVAL %d %d'  % (a, b),
-    9: lambda a, b, c, bx: 'SETTABLE %d %d %d'  % (a, b, c),
+    7:  lambda it: 'SETGLOBAL %d %d'    % (it.A, it.Bx),
+    8:  lambda it: 'SETUPVAL %d %d'     % (it.A, it.B),
+    9:  lambda it: 'SETTABLE %d %d %d'  % (it.A, it.B, it.C),
 
-    10: lambda a, b, c, bx: 'NEWTABLE %d %d %d'  % (a, b, c),
-    11: lambda a, b, c, bx: 'SELF %d %d %d'      % (a, b, c), 
+    10: lambda it: 'NEWTABLE %d %d %d'  % (it.A, it.B, it.C),
+    11: lambda it: 'SELF %d %d %d'      % (it.A, it.B, it.C), 
 
-    12: lambda a, b, c, bx: 'ADD %d %d %d' % (a, b, c),
-    13: lambda a, b, c, bx: 'SUB %d %d %d' % (a, b, c),
-    14: lambda a, b, c, bx: 'MUL %d %d %d' % (a, b, c),
-    15: lambda a, b, c, bx: 'DIV %d %d %d' % (a, b, c),
-    16: lambda a, b, c, bx: 'MOD %d %d %d' % (a, b, c),
-    17: lambda a, b, c, bx: 'POW %d %d %d' % (a, b, c),
-    18: lambda a, b, c, bx: 'UNM %d %d' % (a, b),
-    19: lambda a, b, c, bx: 'NOT %d %d' % (a, b),
-    20: lambda a, b, c, bx: 'LEN %d %d' % (a, b),
+    12: lambda it: 'ADD %d %d %d' % (it.A, it.B, it.C),
+    13: lambda it: 'SUB %d %d %d' % (it.A, it.B, it.C),
+    14: lambda it: 'MUL %d %d %d' % (it.A, it.B, it.C),
+    15: lambda it: 'DIV %d %d %d' % (it.A, it.B, it.C),
+    16: lambda it: 'MOD %d %d %d' % (it.A, it.B, it.C),
+    17: lambda it: 'POW %d %d %d' % (it.A, it.B, it.C),
+    18: lambda it: 'UNM %d %d' % (it.A, it.B),
+    19: lambda it: 'NOT %d %d' % (it.A, it.B),
+    20: lambda it: 'LEN %d %d' % (it.A, it.B),
     
-    21: lambda a, b, c, bx: 'CONCAT %d %d %d' % (a, b, c),
-    22: lambda a, b, c, bx: 'JUMP %d' % bx,
+    21: lambda it: 'CONCAT %d %d %d' % (it.A, it.B, it.C),
+    22: lambda it: 'JUMP %d' % it.Bx,
 
-    23: lambda a, b, c, bx: 'EQ %d %d %d' % (a, b, c),
-    24: lambda a, b, c, bx: 'LT %d %d %d' % (a, b, c),
-    25: lambda a, b, c, bx: 'LE %d %d %d' % (a, b, c),
-    26: lambda a, b, c, bx: 'TEST %d %d' % (a, c),
-    27: lambda a, b, c, bx: 'TESTSET %d %d %d' % (a, b, c),
+    23: lambda it: 'EQ %d %d %d' % (it.A, it.B, it.C),
+    24: lambda it: 'LT %d %d %d' % (it.A, it.B, it.C),
+    25: lambda it: 'LE %d %d %d' % (it.A, it.B, it.C),
+    26: lambda it: 'TEST %d %d' % (it.A, it.C),
+    27: lambda it: 'TESTSET %d %d %d' % (it.A, it.B, it.C),
 
-    28: lambda a, b, c, bx: 'CALL %d %d %d' % (a, b, c),
-    29: lambda a, b, c, bx: 'TAILCALL %d %d %d' % (a, b, c),
-    30: lambda a, b, c, bx: 'RETURN %d %d' % (a, b),
+    28: lambda it: 'CALL %d %d %d' % (it.A, it.B, it.C),
+    29: lambda it: 'TAILCALL %d %d %d' % (it.A, it.B, it.C),
+    30: lambda it: 'RETURN %d %d' % (it.A, it.B),
 
-    31: lambda a, b, c, bx: 'FORLOOP %d %d' % (a, bx),
-    32: lambda a, b, c, bx: 'FORPREP %d %d' % (a, bx),
-    33: lambda a, b, c, bx: 'TFORLOOP %d %d' % (a, c),
+    31: lambda it: 'FORLOOP %d %d' % (it.A, it.Bx),
+    32: lambda it: 'FORPREP %d %d' % (it.A, it.Bx),
+    33: lambda it: 'TFORLOOP %d %d' % (it.A, it.C),
 
-    34: lambda a, b, c, bx: 'SETLIST %d %d %d' % (a, b, c),
+    34: lambda it: 'SETLIST %d %d %d' % (it.A, it.B, it.C),
 
-    35: lambda a, b, c, bx: 'CLOSE',
-    36: lambda a, b, c, bx: 'CLOSURE %d %d' % (a, bx),
+    35: lambda it: 'CLOSE',
+    36: lambda it: 'CLOSURE %d %d' % (it.A, it.Bx),
 
-    37: lambda a, b, c, bx: 'VARARG %d %d' % (a, b),
+    37: lambda it: 'VARARG %d %d' % (it.A, it.B),
 }
 
-OP_DESC = {
-    0: lambda a, b, c, bx, key, func: '%s = %s'           % (R(a), R(b)),
-    1: lambda a, b, c, bx, key, func: '%s = %s'           % (R(a), Kst(bx, key)),
-    2: lambda a, b, c, bx, key, func: '%s = %s%s'         % (a, 'true' if b > 0 else 'false', '; pc++' if c > 0 else ''),
-    3: lambda a, b, c, bx, key, func: '%s = nil'          % (' = '.join([R(i) for i in range(a, b + 1)])),
-    4: lambda a, b, c, bx, key, func: '%s = %s'           % (R(a), U(b)),
+OP_DECODE = {
+    0:  lambda it, key, func, flag: '%s%s = %s'         % (F(it.A, flag), R(it.A), R(it.B)),
+    1:  lambda it, key, func, flag: '%s%s = %s'         % (F(it.A, flag), R(it.A), Kst(it.Bx, key)),
+    2:  lambda it, key, func, flag: '%s%s = %s%s'       % (F(it.A, flag), it.A, 'true' if it.B > 0 else 'false', '; pc++' if it.C > 0 else ''),
+    3:  lambda it, key, func, flag: '%s%s = nil'        % (F(it.A, flag), ' = '.join([R(i) for i in range(it.A, it.B + 1)])),
+    4:  lambda it, key, func, flag: '%s%s = %s'         % (F(it.A, flag), R(it.A), U(it.B)),
 
-    5: lambda a, b, c, bx, key, func: '%s = _G[%s]'       % (R(a), Kst(bx, key)),
-    6: lambda a, b, c, bx, key, func: '%s = %s[%s]'       % (R(a), R(b), RK(c, key)),
+    5:  lambda it, key, func, flag: '%s%s = %s'         % (F(it.A, flag), R(it.A), T('_G', Kst(it.Bx, key))),
+    6:  lambda it, key, func, flag: '%s = %s'           % (R(it.A), T(R(it.B), RK(it.C, key))),
 
-    7: lambda a, b, c, bx, key, func: '_G[%s] = %s'       % (Kst(bx, key), R(a)),
-    8: lambda a, b, c, bx, key, func: '%s = %s'           % (U(b), R(a)),
-    9: lambda a, b, c, bx, key, func: '%s[%s] = %s'       % (R(a), RK(b, key), RK(c, key)),
+    7:  lambda it, key, func, flag: "%s = %s"           % (T('_G', Kst(it.Bx, key)), R(it.A)),
+    8:  lambda it, key, func, flag: '%s = %s'           % (U(it.B), R(it.A)),
+    9:  lambda it, key, func, flag: '%s = %s'           % (T(R(it.A), RK(it.B, key)), RK(it.C, key)),
 
-    10: lambda a, b, c, bx, key, func: '%s = {} (size = %d,%d)' % (R(a), b, c),
-    11: lambda a, b, c, bx, key, func: '%s = %s; %s = %s[%s]'   % (R(a + 1), R(b), R(a), R(b), RK(c, key)),
+    10: lambda it, key, func, flag: '%s%s = {}'         % (F(it.A, flag), R(it.A)),
+    11: lambda it, key, func, flag: '%s = %s; %s = %s[%s]'   % (R(it.A + 1), R(it.B), R(it.A), R(it.B), RK(it.C, key)),
 
-    12: lambda a, b, c, bx, key, func: '%s = %s + %s'      % (R(a), RK(b, key), RK(c, key)),
-    13: lambda a, b, c, bx, key, func: '%s = %s - %s'      % (R(a), RK(b, key), RK(c, key)),
-    14: lambda a, b, c, bx, key, func: '%s = %s * %s'      % (R(a), RK(b, key), RK(c, key)),
-    15: lambda a, b, c, bx, key, func: '%s = %s / %s'      % (R(a), RK(b, key), RK(c, key)),
-    16: lambda a, b, c, bx, key, func: '%s = %s %% %s'     % (R(a), RK(b, key), RK(c, key)),
-    17: lambda a, b, c, bx, key, func: '%s = %s ^ %s'      % (R(a), RK(b, key), RK(c, key)),
-    18: lambda a, b, c, bx, key, func: '%s = -%s'          % (R(a), R(b)),
-    19: lambda a, b, c, bx, key, func: '%s = not %s'       % (R(a), R(b)),
-    20: lambda a, b, c, bx, key, func: '%s = #(%s)'        % (R(a), R(b)),
+    12: lambda it, key, func, flag: '%s = %s + %s'      % (R(it.A), RK(it.B, key), RK(it.C, key)),
+    13: lambda it, key, func, flag: '%s = %s - %s'      % (R(it.A), RK(it.B, key), RK(it.C, key)),
+    14: lambda it, key, func, flag: '%s = %s * %s'      % (R(it.A), RK(it.B, key), RK(it.C, key)),
+    15: lambda it, key, func, flag: '%s = %s / %s'      % (R(it.A), RK(it.B, key), RK(it.C, key)),
+    16: lambda it, key, func, flag: '%s = %s %% %s'     % (R(it.A), RK(it.B, key), RK(it.C, key)),
+    17: lambda it, key, func, flag: '%s = %s ^ %s'      % (R(it.A), RK(it.B, key), RK(it.C, key)),
+    18: lambda it, key, func, flag: '%s = -%s'          % (R(it.A), R(it.B)),
+    19: lambda it, key, func, flag: '%s = not %s'       % (R(it.A), R(it.B)),
+    20: lambda it, key, func, flag: '%s = #(%s)'        % (R(it.A), R(it.B)),
 
-    21: lambda a, b, c, bx, key, func: '%s = %s'           % (R(a), ' .. '.join([R(i) for i in range(b, c + 1)])),
-    22: lambda a, b, c, bx, key, func: 'pc += %s'          % (bx),
+    21: lambda it, key, func, flag: '%s = %s'           % (R(it.A), ' .. '.join([R(i) for i in range(it.B, it.C + 1)])),
+    22: lambda it, key, func, flag: 'pc += %s'          % (it.Bx),
 
-    23: lambda a, b, c, bx, key, func: 'if (%s == %s) ~= %s then pc++' % (RK(b, key), RK(c, key), a),
-    24: lambda a, b, c, bx, key, func: 'if (%s == %s) <  %s then pc++' % (RK(b, key), RK(c, key), a),
-    25: lambda a, b, c, bx, key, func: 'if (%s == %s) <= %s then pc++' % (RK(b, key), RK(c, key), a),
+    23: lambda it, key, func, flag: 'if (%s == %s) ~= %s then pc++' % (RK(it.B, key), RK(it.C, key), it.A),
+    24: lambda it, key, func, flag: 'if (%s == %s) <  %s then pc++' % (RK(it.B, key), RK(it.C, key), it.A),
+    25: lambda it, key, func, flag: 'if (%s == %s) <= %s then pc++' % (RK(it.B, key), RK(it.C, key), it.A),
 
-    26: lambda a, b, c, bx, key, func: 'if not (%s != %s) then pc++'         % (R(a), c),
-    27: lambda a, b, c, bx, key, func: 'if %s != %s then %s = %s else pc++' % (R(b), c, R(a), R(b)),
+    26: lambda it, key, func, flag: 'if not (%s != %s) then pc++'        % (R(it.A), it.C),
+    27: lambda it, key, func, flag: 'if %s != %s then %s = %s else pc++' % (R(it.B), it.C, R(it.A), R(it.B)),
 
-    28: lambda a, b, c, bx, key, func: '%s = %s(%s)'       % (', '.join([R(i) for i in range(a, a + c - 1)]), R(a), ', '.join([R(i) for i in range(a + 1, a + b)])),
-    29: lambda a, b, c, bx, key, func: 'return %s(%s)'     % (R(a), ', '.join([R(i) for i in range(a + 1, a + b)])),
-    30: lambda a, b, c, bx, key, func: 'return %s'         % (', '.join([R(i) for i in range(a, a + b - 1)])),
+    28: lambda it, key, func, flag: '%s = %s(%s)'       % (', '.join([R(i) for i in range(it.A, it.A + it.C - 1)]), R(it.A), ', '.join([R(i) for i in range(it.A + 1, it.A + it.B)])),
+    29: lambda it, key, func, flag: 'return %s(%s)'     % (R(it.A), ', '.join([R(i) for i in range(it.A + 1, it.A + it.B)])),
+    30: lambda it, key, func, flag: 'return %s'         % (', '.join([R(i) for i in range(it.A, it.A + it.B - 1)])),
 
-    31: lambda a, b, c, bx, key, func: '%s + %s; if %s <= %s then { pc += %s; %s = %s }' % (R(a), R(a + 2), R(a), R(a + 1), bx, R(a + 3), R(a)),
-    32: lambda a, b, c, bx, key, func: '%s - %s; pc += %s' % (R(a), R(a + 2), bx),
+    31: lambda it, key, func, flag: '%s + %s; if %s <= %s then { pc += %s; %s = %s }' % (R(it.A), R(it.A + 2), R(it.A), R(it.A + 1), it.Bx, R(it.A + 3), R(it.A)),
+    32: lambda it, key, func, flag: '%s - %s; pc += %s' % (R(it.A), R(it.A + 2), it.Bx),
 
-    33: lambda a, b, c, bx, key, func: '%s = %s(%s, %s); if %s ~= nil then %s = %s else pc++' 
-                                        % (', '.join([R(i) for i in range(a + 3, a + c + 3)]), R(a), R(a + 1), R(a + 2), R(a + 3), R(a + 2), R(a + 3)),
-    34: lambda a, b, c, bx, key, func: '%s[%s * FPF + i] = R(%s + i), i <= i <= %s' % (R(a), c + 1, a, b),
+    33: lambda it, key, func, flag: '%s = %s(%s, %s); if %s ~= nil then %s = %s else pc++' 
+                                        % (', '.join([R(i) for i in range(it.A + 3, it.A + it.C + 3)]), R(it.A), R(it.A + 1), R(it.A + 2), R(it.A + 3), R(it.A + 2), R(it.A + 3)),
+    34: lambda it, key, func, flag: '%s[%s * FPF + i] = R(%s + i), i <= i <= %s' % (R(it.A), it.C + 1, it.A, it.B),
 
-    35: lambda a, b, c, bx, key, func: 'close %s'  % (R(a)),
-    36: lambda a, b, c, bx, key, func: '%s = closure(KPROTO[%s] %d)'  % (R(a), bx, func[bx].Upvalues),
-    37: lambda a, b, c, bx, key, func: '%s = vararg'       % (', '.join([R(i) for i in range(a, a + b)])),
+    35: lambda it, key, func, flag: 'close %s'  % (R(it.A)),
+    36: lambda it, key, func, flag: '%s%s = function() end' % (F(it.A, flag), R(it.A)),
+    37: lambda it, key, func, flag: '%s = vararg'       % (', '.join([R(i) for i in range(it.A, it.A + it.B)])),
 }

@@ -13,7 +13,7 @@ def decompiler(path=None, data=None):
         file = open(path, 'rb+')
     return undump(file)
 
-data = decompiler('base.lua').tojson()
+data = decompiler('base.lua').decompile()
 print(data)
 f = open('out.json', 'w')
 f.write(data)
